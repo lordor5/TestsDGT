@@ -27,8 +27,8 @@ El proyecto es **código abierto** y estamos **abiertos a Pull Requests (PRs)**.
 Si quieres contribuir al proyecto o modificarlo, sigue estos pasos para ejecutarlo en tu entorno local:
 
 ### Requisitos previos
-- Node.js instalado (versión 18 o superior recomendada)
-- npm o yarn
+- Node.js instalado
+- npm
 
 ### Instalación
 
@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-El servidor se iniciará en `http://localhost:3000` y podrás ver los cambios en tiempo real.
+El servidor se iniciará en `http://localhost:4321` y podrás ver los cambios en tiempo real.
 
 ### Comandos disponibles
 
@@ -71,6 +71,3 @@ Las contribuciones son bienvenidas. Si quieres mejorar el proyecto:
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
-## 📄 Licencia
-
-Este proyecto es código abierto. Consulta el archivo LICENSE para más detalles.

@@ -30,13 +30,46 @@ const apartados = [
 ---
 
 <Layout titulo="Tests DGT: practica el examen teórico">
-    <section class="intro">
-        <h1>Practica el teórico de la DGT</h1>
-        <p>
-            {preguntas.length} preguntas oficiales. Tu progreso se guarda en
-            este navegador.
-        </p>
-    </section>
+    <header class="cabecera">
+        <div class="cabecera-content">
+            <h1>Practica el teórico de la DGT</h1>
+            <p>
+                {preguntas.length} preguntas oficiales. Tu progreso se guarda en
+                este navegador.
+            </p>
+        </div>
+        <button class="btn-config" id="btn-config" aria-label="Configuración">
+            ⚙️
+        </button>
+    </header>
+
+    <dialog class="modal-config" id="modal-config">
+        <div class="modal-content">
+            <h2>Configuración</h2>
+            <div class="opciones">
+                <div class="opcion">
+                    <h3>Exportar datos</h3>
+                    <p>Copia tus datos para usarlos en otro navegador o dispositivo</p>
+                    <button class="btn-exportar" id="btn-exportar">
+                        📋 Copiar datos al portapapeles
+                    </button>
+                </div>
+                <div class="opcion">
+                    <h3>Importar datos</h3>
+                    <p>Pega los datos exportados desde otro navegador</p>
+                    <textarea
+                        class="textarea-importar"
+                        id="textarea-importar"
+                        placeholder="Pega aquí los datos exportados..."
+                    ></textarea>
+                    <button class="btn-importar" id="btn-importar">
+                        📥 Importar datos
+                    </button>
+                </div>
+            </div>
+            <button class="btn-cerrar" id="btn-cerrar">Cerrar</button>
+        </div>
+    </dialog>
 
     <section class="progreso" id="progreso" aria-label="Tu progreso">
         <div class="dato facil">
@@ -76,6 +109,28 @@ const apartados = [
                 <p>{a.descripcion}</p>
             </a>
         ))}
+    </section>
+
+    <section class="seo-info">
+        <h2>🎓 ¿Por qué usar TestsDGT para tu examen de conducir?</h2>
+        <p>
+            <strong>TestsDGT</strong> es una web gratuita y sin registro que te permite practicar con los
+            <strong>tests oficiales de la DGT</strong> disponibles en 
+            <a href="https://revista.dgt.es/es/test/" target="_blank" rel="noopener noreferrer">revista.dgt.es</a>.
+            Prepárate para tu examen teórico de conducir con las mismas preguntas que aparecerán en el examen real.
+        </p>
+        <ul>
+            <li>✅ <strong>Totalmente gratis</strong> y sin necesidad de registrarte</li>
+            <li>✅ <strong>Progreso guardado</strong> automáticamente en tu navegador</li>
+            <li>✅ <strong>Repite preguntas fallidas</strong> para practicar solo lo que necesitas mejorar</li>
+            <li>✅ <strong>Copia preguntas</strong> y envíalas a una IA para que te explique la respuesta</li>
+            <li>✅ <strong>Código abierto</strong> - proyecto transparente y disponible en GitHub</li>
+        </ul>
+        <p>
+            Este proyecto es <strong>código abierto</strong> y está disponible en
+            <a href="https://github.com/lordor5/TestsDGT" target="_blank" rel="noopener noreferrer">GitHub</a>.
+            Si quieres contribuir, reportar bugs o sugerir mejoras, siéntete libre de hacerlo.
+        </p>
     </section>
 </Layout>
 
@@ -121,16 +176,193 @@ const apartados = [
             }
         }
     }
+
+    // Configuración del modal
+    const btnConfig = document.getElementById('btn-config');
+    const modalConfig = document.getElementById('modal-config');
+    const btnCerrar = document.getElementById('btn-cerrar');
+    const btnExportar = document.getElementById('btn-exportar');
+    const btnImportar = document.getElementById('btn-importar');
+    const textareaImportar = document.getElementById('textarea-importar');
+
+    if (btnConfig && modalConfig) {
+        btnConfig.addEventListener('click', () => {
+            modalConfig.showModal();
+        });
+    }
+
+    if (btnCerrar && modalConfig) {
+        btnCerrar.addEventListener('click', () => {
+            modalConfig.close();
+        });
+    }
+
+    if (modalConfig) {
+        modalConfig.addEventListener('click', (e) => {
+            if (e.target === modalConfig) {
+                modalConfig.close();
+            }
+        });
+    }
+
+    if (btnExportar) {
+        btnExportar.addEventListener('click', () => {
+            const cookies: Record<string, string> = {};
+            document.cookie.split('; ').forEach((cookie) => {
+                const [nombre, valor] = cookie.split('=');
+                if (nombre.startsWith('dgt_')) {
+                    cookies[nombre] = valor;
+                }
+            });
+
+            const datos = JSON.stringify(cookies);
+            navigator.clipboard.writeText(datos).then(() => {
+                const textoOriginal = btnExportar.textContent;
+                btnExportar.textContent = '✅ Copiado';
+                setTimeout(() => {
+                    btnExportar.textContent = textoOriginal;
+                }, 2000);
+            }).catch((err) => {
+                alert('Error al copiar: ' + err);
+            });
+        });
+    }
+
+    if (btnImportar && textareaImportar) {
+        btnImportar.addEventListener('click', () => {
+            try {
+                const datos = JSON.parse(textareaImportar.value);
+                if (typeof datos !== 'object' || datos === null) {
+                    throw new Error('Formato inválido');
+                }
+
+                let importados = 0;
+                for (const [nombre, valor] of Object.entries(datos)) {
+                    if (nombre.startsWith('dgt_') && typeof valor === 'string') {
+                        document.cookie = `${nombre}=${valor}; max-age=${60 * 60 * 24 * 365 * 2}; path=/; SameSite=Lax`;
+                        importados++;
+                    }
+                }
+
+                if (importados > 0) {
+                    alert(`✅ ${importados} datos importados correctamente. Recarga la página para ver los cambios.`);
+                    modalConfig?.close();
+                    textareaImportar.value = '';
+                } else {
+                    alert('No se encontraron datos válidos para importar.');
+                }
+            } catch (err) {
+                alert('Error al importar: formato inválido. Asegúrate de copiar los datos correctamente.');
+            }
+        });
+    }
 </script>
 
 <style>
-    .intro h1 {
+    .cabecera {
+        background: var(--color-primario);
+        color: #fff;
+        padding: 1.5rem 1rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .cabecera-content h1 {
         margin: 0 0 0.25rem;
         font-size: 1.9rem;
     }
-    .intro p {
+    .cabecera-content p {
+        margin: 0;
+        opacity: 0.9;
+    }
+    .btn-config {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 0.8rem;
+        font-size: 1.3rem;
+        cursor: pointer;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+    .btn-config:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+    .modal-config {
+        border: none;
+        border-radius: 16px;
+        padding: 0;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgb(0 0 0 / 0.3);
+    }
+    .modal-config::backdrop {
+        background: rgba(0, 0, 0, 0.5);
+    }
+    .modal-content {
+        padding: 2rem;
+    }
+    .modal-content h2 {
         margin: 0 0 1.5rem;
+        font-size: 1.5rem;
+    }
+    .opciones {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .opcion h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1.1rem;
+    }
+    .opcion p {
+        margin: 0 0 0.75rem;
         color: var(--color-suave);
+        font-size: 0.9rem;
+    }
+    .btn-exportar,
+    .btn-importar {
+        background: var(--color-primario);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .btn-exportar:hover,
+    .btn-importar:hover {
+        background: #0047cc;
+    }
+    .textarea-importar {
+        width: 100%;
+        min-height: 80px;
+        padding: 0.75rem;
+        border: 1px solid var(--color-borde);
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 0.9rem;
+        resize: vertical;
+        margin-bottom: 0.5rem;
+    }
+    .btn-cerrar {
+        margin-top: 1.5rem;
+        width: 100%;
+        background: var(--color-borde);
+        color: var(--color-texto);
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .btn-cerrar:hover {
+        background: #c1c9d2;
     }
 
     .progreso {
@@ -140,31 +372,33 @@ const apartados = [
         margin-bottom: 2rem;
     }
     .dato {
-        background: var(--color-tarjeta);
-        border: 1px solid var(--color-borde);
-        border-radius: 12px;
-        padding: 0.8rem 1rem;
-        border-top: 4px solid var(--color-borde);
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 0.4rem 0;
+        border-left: 3px solid var(--color-borde);
+        padding-left: 0.75rem;
     }
     .dato strong {
         display: block;
         font-size: 1.6rem;
+        font-weight: 600;
     }
     .dato span {
         color: var(--color-suave);
         font-size: 0.85rem;
     }
     .dato.facil {
-        border-top-color: var(--color-facil);
+        border-left-color: var(--color-facil);
     }
     .dato.medio {
-        border-top-color: var(--color-medio);
+        border-left-color: var(--color-medio);
     }
     .dato.dificil {
-        border-top-color: var(--color-dificil);
+        border-left-color: var(--color-dificil);
     }
     .dato.probabilidad {
-        border-top-color: var(--color-primario);
+        border-left-color: var(--color-primario);
     }
 
     .apartados {
@@ -200,5 +434,37 @@ const apartados = [
     .tarjeta p {
         margin: 0;
         color: var(--color-suave);
+    }
+
+    .seo-info {
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-radius: 14px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+    .seo-info h2 {
+        margin: 0 0 1rem;
+        font-size: 1.3rem;
+        color: var(--color-primario);
+    }
+    .seo-info p {
+        margin: 0 0 1rem;
+        line-height: 1.6;
+    }
+    .seo-info ul {
+        margin: 0 0 1rem;
+        padding-left: 1.5rem;
+    }
+    .seo-info li {
+        margin-bottom: 0.5rem;
+        line-height: 1.5;
+    }
+    .seo-info a {
+        color: var(--color-primario);
+        text-decoration: underline;
+    }
+    .seo-info a:hover {
+        text-decoration: none;
     }
 </style>

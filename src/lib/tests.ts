@@ -29,7 +29,8 @@ export function getTodasLasPreguntas(): Promise<PreguntaDGT[]> {
 /**
  * Tests numerados (1..N). Cada bloque de 150 preguntas se mezcla con su
  * propia semilla, así que añadir preguntas al final del JSON no altera
- * los tests ya existentes.
+ * los tests ya existentes. El último test siempre tiene 30 preguntas,
+ * repitiendo algunas si es necesario.
  */
 export async function getTestsGenerados(): Promise<TestGenerado[]> {
   const todas = await getTodasLasPreguntas();
@@ -48,6 +49,32 @@ export async function getTestsGenerados(): Promise<TestGenerado[]> {
       });
     }
   }
+
+  // Procesar el bloque final (que puede ser incompleto)
+  const restoInicio = bloquesCompletos * TAMANO_BLOQUE;
+  const resto = todas.slice(restoInicio);
+
+  if (resto.length > 0) {
+    const bloqueResto = mezclarConSemilla(resto, SEMILLA_GLOBAL + bloquesCompletos);
+    const numTestsResto = Math.ceil(bloqueResto.length / PREGUNTAS_POR_TEST);
+
+    for (let i = 0; i < numTestsResto; i++) {
+      let preguntas = bloqueResto.slice(i * PREGUNTAS_POR_TEST, (i + 1) * PREGUNTAS_POR_TEST);
+
+      // Si es el último test y no tiene 30 preguntas, repetir algunas hasta completar
+      if (i === numTestsResto - 1 && preguntas.length < PREGUNTAS_POR_TEST) {
+        const faltan = PREGUNTAS_POR_TEST - preguntas.length;
+        const paraRepetir = bloqueResto.slice(0, faltan);
+        preguntas = [...preguntas, ...paraRepetir];
+      }
+
+      tests.push({
+        numero: bloquesCompletos * TESTS_POR_BLOQUE + i + 1,
+        preguntas,
+      });
+    }
+  }
+
   return tests;
 }
 

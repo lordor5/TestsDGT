@@ -23,7 +23,7 @@ export interface TestGenerado {
 export type Nivel = 'facil' | 'medio' | 'dificil';
 
 
-export type Modo = 'aleatorio' | 'repaso' | 'dificil';
+export type Modo = 'repaso' | 'dificil';
 
 /** Lo que viaja al navegador: sin los booleanos `correcta`. */
 export interface PreguntaCliente {

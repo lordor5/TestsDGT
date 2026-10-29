@@ -13,11 +13,6 @@ const modosInfo: Record<
     Modo,
     { nombre: string; texto: string; testTitulo: string }
 > = {
-    aleatorio: {
-        nombre: "Test aleatorio",
-        texto: "Treinta preguntas que nunca has hecho.",
-        testTitulo: "Test aleatorio",
-    },
     repaso: {
         nombre: "Test que he fallado alguna vez",
         texto: "Preguntas que has fallado al menos una vez (nivel medio y difícil).",
@@ -31,14 +26,11 @@ const modosInfo: Record<
 };
 
 const enlaces: Record<Modo, { href: string; texto: string }[]> = {
-    aleatorio: [{ href: `${import.meta.env.BASE_URL}repaso`, texto: "Repasar fallos" }],
     repaso: [
         { href: `${import.meta.env.BASE_URL}tests`, texto: "Hacer un test numerado" },
-        { href: `${import.meta.env.BASE_URL}aleatorio`, texto: "Hacer un test aleatorio" },
     ],
     dificil: [
         { href: `${import.meta.env.BASE_URL}tests`, texto: "Hacer un test numerado" },
-        { href: `${import.meta.env.BASE_URL}aleatorio`, texto: "Hacer un test aleatorio" },
     ],
 };
 ---

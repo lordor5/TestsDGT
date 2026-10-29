@@ -4,9 +4,23 @@ import TestDinamico from "../components/TestDinamico.astro";
 ---
 
 <Layout titulo="Tests que siempre fallo · Tests DGT">
+    <a href={import.meta.env.BASE_URL} class="btn-volver">← Volver al inicio</a>
     <TestDinamico
         titulo="Tests que siempre fallo"
         descripcion="Solo preguntas que sigues fallando (nivel difícil)."
         modos={["dificil"]}
     />
 </Layout>
+
+<style>
+    .btn-volver {
+        display: inline-block;
+        margin-bottom: 1rem;
+        color: var(--color-primario);
+        text-decoration: none;
+        font-weight: 500;
+    }
+    .btn-volver:hover {
+        text-decoration: underline;
+    }
+</style>

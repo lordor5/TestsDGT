@@ -13,9 +13,6 @@ const { titulo = 'Tests DGT' } = Astro.props;
     <title>{titulo}</title>
   </head>
   <body>
-    <header class="cabecera">
-      <a href={import.meta.env.BASE_URL} class="logo">Tests DGT</a>
-    </header>
     <main>
       <slot />
     </main>
@@ -43,17 +40,4 @@ const { titulo = 'Tests DGT' } = Astro.props;
     line-height: 1.5;
   }
   main { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-  .cabecera {
-    background: var(--color-primario);
-    padding: 0.9rem 1rem;
-  }
-  .logo {
-    color: #fff;
-    font-weight: 700;
-    font-size: 1.15rem;
-    text-decoration: none;
-    max-width: 960px;
-    margin: 0 auto;
-    display: block;
-  }
 </style>
