@@ -1,0 +1,68 @@
+<temporizador-test class="temporizador">
+    <span aria-hidden="true">⏱</span>
+    <span class="valor" data-valor role="timer">
+        00:00
+    </span>
+</temporizador-test>
+
+<script>
+    import { formatearTiempo } from "../lib/tiempo";
+
+    class Temporizador extends HTMLElement {
+        #inicio = 0;
+        #fin: number | null = null;
+        #intervalo: number | undefined;
+
+        /** Segundos transcurridos desde iniciar() (o hasta detener()). */
+        get segundos(): number {
+            if (!this.#inicio) return 0;
+            return Math.floor(
+                ((this.#fin ?? Date.now()) - this.#inicio) / 1000,
+            );
+        }
+
+        iniciar(): void {
+            this.#limpiar();
+            this.#inicio = Date.now();
+            this.#fin = null;
+            this.#pintar();
+            this.#intervalo = window.setInterval(() => this.#pintar(), 1000);
+        }
+
+        /** Para el reloj y devuelve los segundos totales. */
+        detener(): number {
+            this.#limpiar();
+            if (this.#inicio && this.#fin === null) this.#fin = Date.now();
+            this.#pintar();
+            return this.segundos;
+        }
+
+        disconnectedCallback(): void {
+            this.#limpiar();
+        }
+
+        #limpiar(): void {
+            if (this.#intervalo !== undefined)
+                window.clearInterval(this.#intervalo);
+            this.#intervalo = undefined;
+        }
+
+        #pintar(): void {
+            const valor = this.querySelector("[data-valor]");
+            if (valor) valor.textContent = formatearTiempo(this.segundos);
+        }
+    }
+
+    customElements.define("temporizador-test", Temporizador);
+</script>
+
+<style>
+    .temporizador {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+</style>

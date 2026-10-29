@@ -1,0 +1,63 @@
+---
+import type { InferGetStaticPropsType } from "astro";
+import Layout from "../../layouts/Layout.astro";
+import TestRunner from "../../components/TestRunner.astro";
+import { aPreguntaCliente, getTestsGenerados } from "../../lib/tests";
+
+export async function getStaticPaths() {
+    const tests = await getTestsGenerados();
+    return tests.map((t) => ({
+        params: { n: String(t.numero) },
+        props: {
+            numero: t.numero,
+            preguntas: t.preguntas.map(aPreguntaCliente),
+            anterior: t.numero > 1 ? t.numero - 1 : null,
+            siguiente: t.numero < tests.length ? t.numero + 1 : null,
+        },
+    }));
+}
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+const { numero, preguntas, anterior, siguiente } = Astro.props;
+const titulo = `Test nº ${numero}`;
+---
+
+<Layout titulo={`${titulo} · Tests DGT`}>
+    <nav class="migas">
+        <a href="/tests">← Todos los tests</a>
+    </nav>
+
+    <TestRunner titulo={titulo} preguntas={preguntas} />
+
+    <nav class="vecinos" aria-label="Otros tests">
+        {anterior ? (
+            <a href={`/tests/${anterior}`}>← Test {anterior}</a>
+        ) : (
+            <span />
+        )}
+        {siguiente ? (
+            <a href={`/tests/${siguiente}`}>Test {siguiente} →</a>
+        ) : (
+            <span />
+        )}
+    </nav>
+</Layout>
+
+<style>
+    .migas {
+        margin-bottom: 1rem;
+    }
+    .vecinos {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 2rem;
+    }
+    a {
+        color: var(--color-primario);
+        text-decoration: none;
+        font-weight: 600;
+    }
+    a:hover {
+        text-decoration: underline;
+    }
+</style>

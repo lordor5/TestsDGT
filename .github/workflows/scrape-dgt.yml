@@ -1,0 +1,61 @@
+name: Scrape DGT Tests
+
+on:
+  schedule:
+    # Ejecutar el primer día de cada mes a las 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+    inputs:
+      start_test:
+        description: 'Número de test inicial'
+        required: false
+        default: '224'
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for Puppeteer
+        run: |
+          npx puppeteer browsers install chrome
+
+      - name: Run scraper
+        env:
+          CI: true
+          START_TEST: ${{ github.event.inputs.start_test || '224' }}
+        run: npm run scrap
+
+      - name: Check for changes
+        id: verify
+        run: |
+          if git diff --quiet tests-dgt.json; then
+            echo "No changes detected"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in tests-dgt.json"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.verify.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add tests-dgt.json
+          git commit -m "Update DGT tests data from scraping"
+          git push

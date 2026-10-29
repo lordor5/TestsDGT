@@ -1,0 +1,745 @@
+---
+import type { PreguntaCliente } from "../lib/types";
+import Temporizador from "./Temporizador.astro";
+
+interface Props {
+    titulo?: string;
+    /** Si se pasan, el test arranca solo (tests numerados). */
+    preguntas?: PreguntaCliente[];
+}
+const { titulo = "", preguntas } = Astro.props;
+const json = preguntas
+    ? JSON.stringify({ titulo, preguntas }).replace(/</g, "\\u003c")
+    : "";
+---
+
+<test-runner>
+    {json && <script is:inline type="application/json" set:html={json} />}
+
+    <h1 data-titulo></h1>
+
+    <div class="tr-barra">
+        <Temporizador />
+        <span class="tr-progreso" aria-live="polite">
+            <strong data-respondidas>0</strong>/<span data-total>0</span>{" "}
+            respondidas
+        </span>
+        <label
+            class="tr-auto"
+            title="Solo se puede cambiar antes de responder la primera pregunta"
+        >
+            <input type="checkbox" data-auto /> Corregir al responder
+        </label>
+        <button type="button" class="tr-boton" data-corregir>
+            Corregir test
+        </button>
+    </div>
+
+    <section
+        class="tr-resultado"
+        data-resultado
+        hidden
+        tabindex="-1"
+        aria-live="polite"
+    >
+        <h2 data-veredicto></h2>
+        <dl class="tr-stats">
+            <div>
+                <dt>Aciertos</dt>
+                <dd data-aciertos></dd>
+            </div>
+            <div>
+                <dt>Fallos</dt>
+                <dd data-fallos></dd>
+            </div>
+            <div>
+                <dt>Sin responder</dt>
+                <dd data-vacias></dd>
+            </div>
+            <div>
+                <dt>Tiempo</dt>
+                <dd data-tiempo></dd>
+            </div>
+        </dl>
+        <p data-nota></p>
+        <div class="tr-acciones">
+            <button type="button" class="tr-boton" data-reintentar>
+                Empezar de nuevo
+            </button>
+            <button type="button" class="tr-boton" data-copiar-fallos title="Copia todas las preguntas en las que has fallado para que la IA te explique los temas que debes repasar">
+                Copiar preguntas fallidas
+            </button>
+            <a href="/">Ir al inicio</a>
+        </div>
+        <p class="tr-explicacion-fallos" data-explicacion-fallos hidden>
+            Este botón copia todas las preguntas en las que has fallado para que la IA te explique los temas que debes repasar.
+        </p>
+    </section>
+
+    <ol class="tr-lista" data-lista></ol>
+</test-runner>
+
+<script>
+    import { registrarResultados, type Resultado } from "../lib/progreso";
+    import { formatearTiempo } from "../lib/tiempo";
+    import type { PreguntaCliente } from "../lib/types";
+
+    /** Examen oficial: máximo 3 errores sobre 30. */
+    const MAX_ERRORES = 3;
+    const CLAVE_AUTO = "dgt_autocorregir";
+
+    type TemporizadorEl = HTMLElement & { iniciar(): void; detener(): number };
+
+    interface EstadoPregunta {
+        pregunta: PreguntaCliente;
+        elegida: string | null;
+        corregida: boolean;
+        el: HTMLLIElement;
+    }
+
+    const plural = (n: number, uno: string, varios: string) =>
+        n === 1 ? uno : varios;
+
+    function leerAuto(): boolean {
+        try {
+            return localStorage.getItem(CLAVE_AUTO) === "1";
+        } catch {
+            return false;
+        }
+    }
+
+    function guardarAuto(valor: boolean): void {
+        try {
+            localStorage.setItem(CLAVE_AUTO, valor ? "1" : "0");
+        } catch {
+            /* sin localStorage: no pasa nada */
+        }
+    }
+
+    class TestRunner extends HTMLElement {
+        #estados: EstadoPregunta[] = [];
+        #terminado = false;
+        #enlazado = false;
+
+        connectedCallback(): void {
+            if (this.#enlazado) return;
+            this.#enlazado = true;
+
+            const auto = this.#q<HTMLInputElement>("[data-auto]");
+            auto.checked = leerAuto();
+            auto.addEventListener("change", () => {
+                guardarAuto(auto.checked);
+                this.#actualizarBoton();
+            });
+            this.#actualizarBoton();
+
+            this.#q("[data-corregir]").addEventListener("click", () =>
+                this.#terminar(),
+            );
+            this.#q("[data-reintentar]").addEventListener("click", () =>
+                location.reload(),
+            );
+            this.#q("[data-copiar-fallos]").addEventListener("click", () =>
+                this.#copiarFallos(),
+            );
+            this.#q("[data-lista]").addEventListener("click", (e) => {
+                const boton = (e.target as Element).closest<HTMLButtonElement>(
+                    "button[data-letra]",
+                );
+                if (boton) this.#elegir(boton);
+            });
+
+            // Tests numerados: las preguntas vienen incrustadas en el HTML.
+            const datos = this.querySelector('script[type="application/json"]');
+            if (datos?.textContent) {
+                const { titulo, preguntas } = JSON.parse(datos.textContent);
+                void this.iniciar(preguntas, titulo);
+            }
+        }
+
+        async iniciar(
+            preguntas: PreguntaCliente[],
+            titulo = "",
+        ): Promise<void> {
+            this.#terminado = false;
+            this.#q("[data-titulo]").textContent = titulo;
+            this.#q("[data-resultado]").hidden = true;
+            this.#q<HTMLInputElement>("[data-auto]").disabled = false;
+            this.#q<HTMLButtonElement>("[data-corregir]").disabled = false;
+            this.#actualizarBoton();
+
+            this.#estados = preguntas.map((pregunta, i) => ({
+                pregunta,
+                elegida: null,
+                corregida: false,
+                el: this.#crearPregunta(pregunta, i),
+            }));
+            this.#q("[data-lista]").replaceChildren(
+                ...this.#estados.map((e) => e.el),
+            );
+            this.#q("[data-total]").textContent = String(preguntas.length);
+            this.#actualizarProgreso();
+
+            await customElements.whenDefined("temporizador-test");
+            this.#q<TemporizadorEl>("temporizador-test").iniciar();
+        }
+
+        /* ---------- Construcción del DOM ---------- */
+
+        #crearPregunta(p: PreguntaCliente, i: number): HTMLLIElement {
+            const li = document.createElement("li");
+            li.className = "tr-pregunta";
+            li.id = `pregunta-${i + 1}`;
+
+            const enunciado = document.createElement("h2");
+            enunciado.className = "tr-enunciado";
+            const num = document.createElement("span");
+            num.className = "tr-num";
+            num.textContent = String(i + 1);
+            const texto = document.createElement("span");
+            texto.textContent = p.pregunta;
+            enunciado.append(num, texto);
+            li.append(enunciado);
+
+            if (p.imagen) {
+                const img = document.createElement("img");
+                img.className = "tr-imagen";
+                img.src = p.imagen;
+                img.alt = `Imagen de la pregunta ${i + 1}`;
+                img.loading = "lazy";
+                img.referrerPolicy = "no-referrer";
+                img.addEventListener("error", () => {
+                    const aviso = document.createElement("p");
+                    aviso.className = "tr-imagen-error";
+                    const enlace = document.createElement("a");
+                    enlace.href = p.imagen!;
+                    enlace.target = "_blank";
+                    enlace.rel = "noopener noreferrer";
+                    enlace.textContent = "abrir imagen";
+                    aviso.append("No se ha podido cargar la imagen: ", enlace);
+                    img.replaceWith(aviso);
+                });
+                li.append(img);
+            }
+
+            const opciones = document.createElement("div");
+            opciones.className = "tr-opciones";
+            opciones.setAttribute("role", "group");
+            opciones.setAttribute(
+                "aria-label",
+                `Respuestas de la pregunta ${i + 1}`,
+            );
+            for (const r of p.respuestas) {
+                const boton = document.createElement("button");
+                boton.type = "button";
+                boton.className = "tr-opcion";
+                boton.dataset.letra = r.letra;
+                boton.setAttribute("aria-pressed", "false");
+                const letra = document.createElement("span");
+                letra.className = "tr-letra";
+                letra.textContent = r.letra;
+                const cuerpo = document.createElement("span");
+                cuerpo.textContent = r.texto;
+                boton.append(letra, cuerpo);
+                opciones.append(boton);
+            }
+            li.append(opciones);
+
+            const feedback = document.createElement("p");
+            feedback.className = "tr-feedback";
+            feedback.hidden = true;
+            li.append(feedback);
+
+            const copiarBtn = document.createElement("button");
+            copiarBtn.type = "button";
+            copiarBtn.className = "tr-copiar";
+            copiarBtn.textContent = "Copiar pregunta";
+            copiarBtn.title = "Copiar pregunta para la IA";
+            copiarBtn.dataset.copiarPregunta = "";
+            copiarBtn.addEventListener("click", () => {
+                const texto = `${i + 1}. ${p.pregunta}\n\n${p.respuestas.map(r => `${r.letra}) ${r.texto}`).join("\n")}`;
+                navigator.clipboard.writeText(texto).then(() => {
+                    copiarBtn.textContent = "¡Copiado!";
+                    setTimeout(() => {
+                        copiarBtn.textContent = "Copiar pregunta";
+                    }, 2000);
+                });
+            });
+            li.append(copiarBtn);
+
+            return li;
+        }
+
+        /* ---------- Interacción ---------- */
+
+        #elegir(boton: HTMLButtonElement): void {
+            if (this.#terminado) return;
+            const li = boton.closest("li.tr-pregunta");
+            const estado = this.#estados.find((e) => e.el === li);
+            if (!estado || estado.corregida) return;
+
+            estado.elegida = boton.dataset.letra ?? null;
+            estado.el
+                .querySelectorAll<HTMLButtonElement>("button[data-letra]")
+                .forEach((b) => {
+                    b.setAttribute("aria-pressed", String(b === boton));
+                });
+
+            const auto = this.#q<HTMLInputElement>("[data-auto]");
+            auto.disabled = true; // el modo ya no se puede cambiar
+            if (auto.checked) this.#corregir([estado]);
+            this.#actualizarProgreso();
+        }
+
+        #terminar(): void {
+            if (this.#terminado) return;
+
+            const vacias = this.#estados.filter(
+                (e) => e.elegida === null,
+            ).length;
+            if (vacias > 0) {
+                const seguir = confirm(
+                    `${plural(vacias, "Te queda", "Te quedan")} ${vacias} ${plural(vacias, "pregunta", "preguntas")} sin responder. ¿Corregir el test igualmente?`,
+                );
+                if (!seguir) return;
+            }
+
+            this.#terminado = true;
+            const segundos =
+                this.#q<TemporizadorEl>("temporizador-test").detener();
+            this.#corregir(this.#estados);
+            this.#q<HTMLInputElement>("[data-auto]").disabled = true;
+            this.#q<HTMLButtonElement>("[data-corregir]").disabled = true;
+            this.#mostrarResultado(segundos);
+        }
+
+        /** Marca las preguntas como corregidas y guarda en cookies las respondidas. */
+        #corregir(estados: EstadoPregunta[]): void {
+            const resultados: Resultado[] = [];
+
+            for (const e of estados) {
+                if (e.corregida) continue;
+                e.corregida = true;
+                const correcta = e.pregunta.respuestaCorrecta;
+
+                e.el
+                    .querySelectorAll<HTMLButtonElement>("button[data-letra]")
+                    .forEach((b) => {
+                        const letra = b.dataset.letra;
+                        b.disabled = true;
+                        b.classList.toggle("correcta", letra === correcta);
+                        b.classList.toggle(
+                            "incorrecta",
+                            letra === e.elegida && letra !== correcta,
+                        );
+                    });
+
+                const feedback =
+                    e.el.querySelector<HTMLElement>(".tr-feedback")!;
+                feedback.hidden = false;
+
+                if (e.elegida === null) {
+                    e.el.classList.add("vacia");
+                    feedback.textContent = `Sin responder. La respuesta correcta es la ${correcta}.`;
+                } else if (e.elegida === correcta) {
+                    e.el.classList.add("acierto");
+                    feedback.textContent = "✓ Correcto";
+                    resultados.push({ id: e.pregunta.id, acierto: true });
+                } else {
+                    e.el.classList.add("fallo");
+                    feedback.textContent = `✗ Incorrecto. La respuesta correcta es la ${correcta}.`;
+                    resultados.push({ id: e.pregunta.id, acierto: false });
+                }
+            }
+
+            if (resultados.length) registrarResultados(resultados);
+        }
+
+        #mostrarResultado(segundos: number): void {
+            const total = this.#estados.length;
+            const aciertos = this.#estados.filter(
+                (e) => e.elegida === e.pregunta.respuestaCorrecta,
+            ).length;
+            const vacias = this.#estados.filter(
+                (e) => e.elegida === null,
+            ).length;
+            const fallos = total - aciertos - vacias;
+            const errores = fallos + vacias;
+            const apto = errores <= MAX_ERRORES;
+
+            const panel = this.#q("[data-resultado]");
+            panel.classList.toggle("apto", apto);
+            panel.classList.toggle("no-apto", !apto);
+            this.#q("[data-veredicto]").textContent = apto
+                ? "✓ Apto"
+                : "✗ No apto";
+            this.#q("[data-aciertos]").textContent = String(aciertos);
+            this.#q("[data-fallos]").textContent = String(fallos);
+            this.#q("[data-vacias]").textContent = String(vacias);
+            this.#q("[data-tiempo]").textContent = formatearTiempo(segundos);
+            this.#q("[data-nota]").textContent =
+                `Errores: ${errores} (las preguntas en blanco cuentan como error). ` +
+                `En el examen oficial se aprueba con un máximo de ${MAX_ERRORES}. ` +
+                (vacias > 0
+                    ? "Las preguntas sin responder no se guardan en tu progreso."
+                    : "");
+
+            const copiarFallosBtn = this.#q<HTMLButtonElement>("[data-copiar-fallos]");
+            const explicacionFallos = this.#q<HTMLElement>("[data-explicacion-fallos]");
+            copiarFallosBtn.hidden = fallos === 0;
+            explicacionFallos.hidden = fallos === 0;
+
+            panel.hidden = false;
+            panel.focus({ preventScroll: true });
+            panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        #copiarFallos(): void {
+            const fallos = this.#estados.filter(
+                (e) => e.elegida !== null && e.elegida !== e.pregunta.respuestaCorrecta,
+            );
+
+            if (fallos.length === 0) {
+                alert("No hay preguntas fallidas para copiar.");
+                return;
+            }
+
+            const texto = fallos.map((e, i) => {
+                const idx = this.#estados.indexOf(e) + 1;
+                return `${idx}. ${e.pregunta.pregunta}\n\n${e.pregunta.respuestas.map(r => `${r.letra}) ${r.texto}`).join("\n")}\n\nTu respuesta: ${e.elegida}\nRespuesta correcta: ${e.pregunta.respuestaCorrecta}`;
+            }).join("\n\n---\n\n");
+
+            navigator.clipboard.writeText(texto).then(() => {
+                const btn = this.#q<HTMLButtonElement>("[data-copiar-fallos]");
+                btn.textContent = "¡Copiado!";
+                setTimeout(() => {
+                    btn.textContent = "Copiar preguntas fallidas";
+                }, 2000);
+            });
+        }
+
+        /* ---------- Utilidades ---------- */
+
+        #actualizarProgreso(): void {
+            const respondidas = this.#estados.filter(
+                (e) => e.elegida !== null,
+            ).length;
+            this.#q("[data-respondidas]").textContent = String(respondidas);
+        }
+
+        #actualizarBoton(): void {
+            const auto = this.#q<HTMLInputElement>("[data-auto]").checked;
+            this.#q("[data-corregir]").textContent = auto
+                ? "Finalizar test"
+                : "Corregir test";
+        }
+
+        #q<T extends HTMLElement = HTMLElement>(selector: string): T {
+            return this.querySelector<T>(selector)!;
+        }
+    }
+
+    customElements.define("test-runner", TestRunner);
+</script>
+
+<style is:global>
+    test-runner {
+        display: block;
+    }
+    test-runner [hidden] {
+        display: none !important;
+    }
+    test-runner h1 {
+        margin: 0 0 1rem;
+    }
+
+    /* Barra superior fija */
+    .tr-barra {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 1.25rem;
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-radius: 12px;
+        padding: 0.7rem 1rem;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 2px 8px rgb(0 0 0 / 0.06);
+    }
+    .tr-progreso {
+        color: var(--color-suave);
+        font-size: 0.9rem;
+    }
+    .tr-auto {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+    .tr-auto input {
+        width: 1.1rem;
+        height: 1.1rem;
+    }
+    .tr-barra .tr-boton {
+        margin-left: auto;
+    }
+
+    .tr-boton {
+        display: inline-block;
+        padding: 0.6rem 1.1rem;
+        border: 0;
+        border-radius: 10px;
+        background: var(--color-primario);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .tr-boton:disabled {
+        background: var(--color-borde);
+        color: var(--color-suave);
+        cursor: not-allowed;
+    }
+
+    /* Resultado */
+    .tr-resultado {
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-top: 6px solid var(--color-borde);
+        border-radius: 14px;
+        padding: 1.2rem 1.4rem;
+        margin-bottom: 1.25rem;
+        scroll-margin-top: 5rem;
+    }
+    .tr-resultado.apto {
+        border-top-color: var(--color-facil);
+    }
+    .tr-resultado.no-apto {
+        border-top-color: var(--color-dificil);
+    }
+    .tr-resultado h2 {
+        margin: 0;
+        font-size: 1.6rem;
+    }
+    .tr-resultado.apto h2 {
+        color: var(--color-facil);
+    }
+    .tr-resultado.no-apto h2 {
+        color: var(--color-dificil);
+    }
+    .tr-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 0.75rem;
+        margin: 1rem 0;
+    }
+    .tr-stats dt {
+        color: var(--color-suave);
+        font-size: 0.85rem;
+    }
+    .tr-stats dd {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .tr-resultado p {
+        color: var(--color-suave);
+        margin: 0 0 1rem;
+    }
+    .tr-acciones {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+    }
+    .tr-acciones a {
+        color: var(--color-primario);
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    /* Lista de preguntas */
+    .tr-lista {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+    .tr-pregunta {
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-left: 5px solid var(--color-borde);
+        border-radius: 14px;
+        padding: 1.2rem;
+        scroll-margin-top: 6rem;
+    }
+    .tr-pregunta.acierto {
+        border-left-color: var(--color-facil);
+    }
+    .tr-pregunta.fallo {
+        border-left-color: var(--color-dificil);
+    }
+    .tr-pregunta.vacia {
+        border-left-color: var(--color-medio);
+    }
+
+    .tr-enunciado {
+        display: flex;
+        gap: 0.75rem;
+        margin: 0 0 0.9rem;
+        font-size: 1.05rem;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+    .tr-num {
+        flex: none;
+        min-width: 1.9rem;
+        height: 1.9rem;
+        padding: 0 0.3rem;
+        border-radius: 999px;
+        background: var(--color-texto);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 0.85rem;
+    }
+    .tr-imagen {
+        display: block;
+        max-width: 100%;
+        max-height: 320px;
+        height: auto;
+        margin: 0 auto 1rem;
+        border-radius: 10px;
+        border: 1px solid var(--color-borde);
+        background: #fff;
+    }
+    .tr-imagen-error {
+        color: var(--color-suave);
+        font-size: 0.9rem;
+        margin: 0 0 1rem;
+    }
+
+    /* Opciones */
+    .tr-opciones {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .tr-opcion {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        width: 100%;
+        text-align: left;
+        padding: 0.7rem 0.9rem;
+        background: var(--color-fondo);
+        border: 2px solid var(--color-borde);
+        border-radius: 10px;
+        font: inherit;
+        color: var(--color-texto);
+        cursor: pointer;
+        transition:
+            border-color 0.15s,
+            background 0.15s;
+    }
+    .tr-opcion:hover:not(:disabled) {
+        border-color: var(--color-primario);
+    }
+    .tr-opcion:disabled {
+        cursor: default;
+        color: var(--color-texto);
+    }
+    .tr-letra {
+        flex: none;
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 50%;
+        background: var(--color-borde);
+        display: grid;
+        place-items: center;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+    .tr-opcion[aria-pressed="true"] {
+        border-color: var(--color-primario);
+        background: #e8f0ff;
+    }
+    .tr-opcion[aria-pressed="true"] .tr-letra {
+        background: var(--color-primario);
+        color: #fff;
+    }
+
+    /* Tras corregir (van después para ganar a aria-pressed) */
+    .tr-opcion.correcta {
+        border-color: var(--color-facil);
+        background: #e7f6ed;
+    }
+    .tr-opcion.correcta .tr-letra {
+        background: var(--color-facil);
+        color: #fff;
+    }
+    .tr-opcion.correcta::after {
+        content: "✓";
+        margin-left: auto;
+        font-weight: 700;
+        color: var(--color-facil);
+    }
+    .tr-opcion.incorrecta {
+        border-color: var(--color-dificil);
+        background: #fdeaf1;
+    }
+    .tr-opcion.incorrecta .tr-letra {
+        background: var(--color-dificil);
+        color: #fff;
+    }
+    .tr-opcion.incorrecta::after {
+        content: "✗";
+        margin-left: auto;
+        font-weight: 700;
+        color: var(--color-dificil);
+    }
+
+    .tr-feedback {
+        margin: 0.75rem 0 0;
+        font-weight: 600;
+    }
+    .acierto .tr-feedback {
+        color: var(--color-facil);
+    }
+    .fallo .tr-feedback {
+        color: var(--color-dificil);
+    }
+    .vacia .tr-feedback {
+        color: var(--color-medio);
+    }
+
+    .tr-copiar {
+        margin-top: 0.75rem;
+        padding: 0.5rem 0.8rem;
+        border: 1px solid var(--color-borde);
+        border-radius: 8px;
+        background: var(--color-fondo);
+        color: var(--color-suave);
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .tr-copiar:hover {
+        border-color: var(--color-primario);
+        color: var(--color-primario);
+    }
+
+    .tr-explicacion-fallos {
+        color: var(--color-suave);
+        font-size: 0.85rem;
+        margin: 0.5rem 0 0;
+        font-style: italic;
+    }
+</style>

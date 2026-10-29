@@ -1,0 +1,179 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { PREGUNTAS_POR_TEST, TESTS_POR_BLOQUE } from "../../lib/config";
+import { getTestsGenerados, getTodasLasPreguntas } from "../../lib/tests";
+
+const [tests, todas] = await Promise.all([
+    getTestsGenerados(),
+    getTodasLasPreguntas(),
+]);
+const idsPorTest = Object.fromEntries(
+    tests.map((t) => [t.numero, t.preguntas.map((p) => p.id)]),
+);
+const minimo = PREGUNTAS_POR_TEST * TESTS_POR_BLOQUE;
+---
+
+<Layout titulo="Tests numerados · Tests DGT">
+    <nav class="migas">
+        <a href="/">← Inicio</a>
+    </nav>
+    <h1>Tests numerados</h1>
+
+    {tests.length === 0 ? (
+        <p class="vacio">
+            Todavía no hay tests numerados: hacen falta al menos {minimo}{" "}
+            preguntas y ahora hay {todas.length}.
+        </p>
+    ) : (
+        <>
+            <p class="sub">
+                {tests.length} tests de {PREGUNTAS_POR_TEST} preguntas.
+            </p>
+            <ul class="rejilla">
+                {tests.map((t) => (
+                    <li>
+                        <a
+                            class="test"
+                            href={`/tests/${t.numero}`}
+                            data-test={t.numero}
+                        >
+                            <strong>Test {t.numero}</strong>
+                            <span class="texto">
+                                Hechas <span data-hechas>–</span>/
+                                {PREGUNTAS_POR_TEST}
+                            </span>
+                            <span class="barra">
+                                <span data-barra />
+                            </span>
+                            <span class="fallos" data-fallos hidden />
+                        </a>
+                    </li>
+                ))}
+            </ul>
+        </>
+    )}
+
+    <script
+        is:inline
+        type="application/json"
+        id="ids-por-test"
+        set:html={JSON.stringify(idsPorTest)}
+    />
+</Layout>
+
+<script>
+    import { cargarProgreso, contarFallos, nivelDe } from "../../lib/progreso";
+
+    const datos = document.getElementById("ids-por-test");
+
+    if (datos) {
+        const idsPorTest: Record<string, string[]> = JSON.parse(
+            datos.textContent ?? "{}",
+        );
+        const progreso = cargarProgreso();
+
+        document
+            .querySelectorAll<HTMLElement>("[data-test]")
+            .forEach((tarjeta) => {
+                const ids = idsPorTest[tarjeta.dataset.test ?? ""] ?? [];
+                const hechas = ids.filter(id => {
+                    const nivel = nivelDe(id, progreso);
+                    return nivel !== undefined;
+                }).length;
+                const fallos = contarFallos(ids, progreso);
+
+                tarjeta.querySelector("[data-hechas]")!.textContent =
+                    String(hechas);
+                const barra =
+                    tarjeta.querySelector<HTMLElement>("[data-barra]")!;
+                barra.style.width = `${ids.length ? (hechas / ids.length) * 100 : 0}%`;
+
+                if (fallos > 0) {
+                    const aviso =
+                        tarjeta.querySelector<HTMLElement>("[data-fallos]")!;
+                    aviso.textContent = `${fallos} fallos`;
+                    aviso.hidden = false;
+                }
+                tarjeta.classList.toggle(
+                    "completo",
+                    ids.length > 0 && hechas === ids.length,
+                );
+            });
+    }
+</script>
+
+<style>
+    .migas {
+        margin-bottom: 1rem;
+    }
+    .migas a {
+        color: var(--color-primario);
+        text-decoration: none;
+        font-weight: 600;
+    }
+    h1 {
+        margin: 0 0 0.25rem;
+    }
+    .sub,
+    .vacio {
+        color: var(--color-suave);
+        margin: 0 0 1.5rem;
+    }
+
+    .rejilla {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.75rem;
+    }
+    .test {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        height: 100%;
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        text-decoration: none;
+        color: inherit;
+        transition:
+            transform 0.15s,
+            border-color 0.15s;
+    }
+    .test:hover,
+    .test:focus-visible {
+        transform: translateY(-2px);
+        border-color: var(--color-primario);
+        outline: none;
+    }
+    .texto {
+        font-size: 0.85rem;
+        color: var(--color-suave);
+    }
+    .barra {
+        height: 6px;
+        background: var(--color-borde);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .barra span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--color-primario);
+    }
+    .fallos {
+        font-size: 0.8rem;
+        color: var(--color-dificil);
+        font-weight: 600;
+    }
+    .completo .barra span {
+        background: var(--color-facil);
+    }
+    [hidden] {
+        display: none !important;
+    }
+</style>

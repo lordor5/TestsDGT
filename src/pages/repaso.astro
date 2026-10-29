@@ -1,0 +1,12 @@
+---
+import Layout from "../layouts/Layout.astro";
+import TestDinamico from "../components/TestDinamico.astro";
+---
+
+<Layout titulo="Repasar fallos · Tests DGT">
+    <TestDinamico
+        titulo="Repasar fallos"
+        descripcion="Repasa las preguntas que has fallado, o ve a por las más difíciles."
+        modos={["repaso", "dificil"]}
+    />
+</Layout>

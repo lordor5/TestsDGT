@@ -1,0 +1,59 @@
+---
+interface Props {
+  titulo?: string;
+}
+const { titulo = 'Tests DGT' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{titulo}</title>
+  </head>
+  <body>
+    <header class="cabecera">
+      <a href="/" class="logo">Tests DGT</a>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --color-fondo: #f5f7fa;
+    --color-tarjeta: #ffffff;
+    --color-texto: #1f2933;
+    --color-suave: #616e7c;
+    --color-borde: #d9e2ec;
+    --color-primario: #0b5fff;
+    --color-facil: #1a8a4a;
+    --color-medio: #d98e04;
+    --color-dificil: #d6336c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--color-fondo);
+    color: var(--color-texto);
+    line-height: 1.5;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .cabecera {
+    background: var(--color-primario);
+    padding: 0.9rem 1rem;
+  }
+  .logo {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.15rem;
+    text-decoration: none;
+    max-width: 960px;
+    margin: 0 auto;
+    display: block;
+  }
+</style>

@@ -1,0 +1,279 @@
+---
+import type { Modo } from "../lib/types";
+import TestRunner from "./TestRunner.astro";
+
+interface Props {
+    titulo: string;
+    descripcion: string;
+    modos: Modo[];
+}
+const { titulo, descripcion, modos } = Astro.props;
+
+const modosInfo: Record<
+    Modo,
+    { nombre: string; texto: string; testTitulo: string }
+> = {
+    aleatorio: {
+        nombre: "Test aleatorio",
+        texto: "Treinta preguntas que nunca has hecho.",
+        testTitulo: "Test aleatorio",
+    },
+    repaso: {
+        nombre: "Test que he fallado alguna vez",
+        texto: "Preguntas que has fallado al menos una vez (nivel medio y difícil).",
+        testTitulo: "Test que he fallado alguna vez",
+    },
+    dificil: {
+        nombre: "Test que siempre fallo",
+        texto: "Solo preguntas que sigues fallando (nivel difícil).",
+        testTitulo: "Test que siempre fallo",
+    },
+};
+
+const enlaces: Record<Modo, { href: string; texto: string }[]> = {
+    aleatorio: [{ href: "/repaso", texto: "Repasar fallos" }],
+    repaso: [
+        { href: "/tests", texto: "Hacer un test numerado" },
+        { href: "/aleatorio", texto: "Hacer un test aleatorio" },
+    ],
+    dificil: [
+        { href: "/tests", texto: "Hacer un test numerado" },
+        { href: "/aleatorio", texto: "Hacer un test aleatorio" },
+    ],
+};
+---
+
+<section data-dinamico data-modos={modos.join(",")}>
+    <div data-cabecera>
+        <nav class="migas">
+            <a href="/">← Inicio</a>
+        </nav>
+        <h1>{titulo}</h1>
+        <p class="sub">{descripcion}</p>
+        <p class="estado" data-estado>
+            Cargando preguntas…
+        </p>
+    </div>
+
+    <div class="opciones" data-opciones hidden>
+        {modos.map((m) => (
+            <article
+                class="opcion"
+                data-modo={m}
+                data-titulo={modosInfo[m].testTitulo}
+            >
+                <h2>{modosInfo[m].nombre}</h2>
+                <p>{modosInfo[m].texto}</p>
+                <p class="disponibles">
+                    Disponibles: <strong data-disponibles>–</strong>
+                </p>
+
+                <div class="aviso" data-aviso hidden role="alert">
+                    <strong data-aviso-titulo />
+                    <p data-aviso-texto />
+                    <ul data-enlaces hidden>
+                        {enlaces[m].map((e) => (
+                            <li>
+                                <a href={e.href}>{e.texto}</a>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                <button type="button" data-iniciar disabled>
+                    Empezar test
+                </button>
+            </article>
+        ))}
+    </div>
+
+    <div data-runner hidden>
+        <TestRunner />
+    </div>
+</section>
+
+<script>
+    import { cargarProgreso } from "../lib/progreso";
+    import {
+        avisoInsuficiente,
+        seleccionarPreguntas,
+        type Seleccion,
+    } from "../lib/seleccion";
+    import type { Modo, PreguntaCliente } from "../lib/types";
+
+    type Runner = HTMLElement & {
+        iniciar(preguntas: PreguntaCliente[], titulo?: string): void;
+    };
+
+    const raiz = document.querySelector<HTMLElement>("[data-dinamico]");
+    if (raiz) void arrancar(raiz);
+
+    async function arrancar(raiz: HTMLElement) {
+        const modos = (raiz.dataset.modos ?? "").split(",") as Modo[];
+        const cabecera = raiz.querySelector<HTMLElement>("[data-cabecera]")!;
+        const estado = raiz.querySelector<HTMLElement>("[data-estado]")!;
+        const opciones = raiz.querySelector<HTMLElement>("[data-opciones]")!;
+        const contenedorRunner =
+            raiz.querySelector<HTMLElement>("[data-runner]")!;
+
+        let todas: PreguntaCliente[];
+        try {
+            const respuesta = await fetch("/preguntas.json");
+            if (!respuesta.ok) throw new Error(String(respuesta.status));
+            todas = await respuesta.json();
+        } catch {
+            estado.textContent =
+                "No se han podido cargar las preguntas. Recarga la página.";
+            return;
+        }
+
+        estado.hidden = true;
+        opciones.hidden = false;
+        const progreso = cargarProgreso();
+
+        async function empezar(preguntas: PreguntaCliente[], titulo: string) {
+            cabecera.hidden = true;
+            opciones.hidden = true;
+            contenedorRunner.hidden = false;
+            await customElements.whenDefined("test-runner");
+            contenedorRunner
+                .querySelector<Runner>("test-runner")!
+                .iniciar(preguntas, titulo);
+        }
+
+        const selecciones = new Map<Modo, Seleccion>();
+
+        for (const modo of modos) {
+            const articulo = raiz.querySelector<HTMLElement>(
+                `[data-modo="${modo}"]`,
+            )!;
+            const seleccion = seleccionarPreguntas(todas, progreso, modo);
+            selecciones.set(modo, seleccion);
+
+            articulo.querySelector("[data-disponibles]")!.textContent = String(
+                seleccion.disponibles,
+            );
+            const boton =
+                articulo.querySelector<HTMLButtonElement>("[data-iniciar]")!;
+
+            if (seleccion.ok) {
+                boton.disabled = false;
+                boton.addEventListener("click", () =>
+                    empezar(seleccion.preguntas, articulo.dataset.titulo ?? ""),
+                );
+                if (seleccion.advertencia) {
+                    articulo.querySelector("[data-aviso-titulo]")!.textContent =
+                        "Test con menos preguntas";
+                    articulo.querySelector("[data-aviso-texto]")!.textContent =
+                        seleccion.advertencia;
+                    articulo.querySelector<HTMLElement>("[data-aviso]")!.hidden =
+                        false;
+                }
+            } else {
+                const aviso = avisoInsuficiente(modo, seleccion.disponibles);
+                articulo.querySelector("[data-aviso-titulo]")!.textContent =
+                    aviso.titulo;
+                articulo.querySelector("[data-aviso-texto]")!.textContent =
+                    aviso.texto;
+                articulo.querySelector<HTMLElement>("[data-aviso]")!.hidden =
+                    false;
+                articulo.querySelector<HTMLElement>("[data-enlaces]")!.hidden =
+                    false;
+            }
+        }
+
+        // Con un solo modo y preguntas suficientes, no hace falta pulsar nada.
+        if (modos.length === 1) {
+            const unica = selecciones.get(modos[0]);
+            const articulo = raiz.querySelector<HTMLElement>(
+                `[data-modo="${modos[0]}"]`,
+            )!;
+            if (unica?.ok)
+                void empezar(unica.preguntas, articulo.dataset.titulo ?? "");
+        }
+    }
+</script>
+
+<style>
+    .migas {
+        margin-bottom: 1rem;
+    }
+    .migas a {
+        color: var(--color-primario);
+        text-decoration: none;
+        font-weight: 600;
+    }
+    h1 {
+        margin: 0 0 0.25rem;
+    }
+    .sub,
+    .estado {
+        color: var(--color-suave);
+        margin: 0 0 1.5rem;
+    }
+
+    .opciones {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    .opcion {
+        background: var(--color-tarjeta);
+        border: 1px solid var(--color-borde);
+        border-radius: 14px;
+        padding: 1.4rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .opcion h2 {
+        margin: 0;
+        font-size: 1.2rem;
+    }
+    .opcion p {
+        margin: 0;
+        color: var(--color-suave);
+    }
+
+    .aviso {
+        background: #fff8e6;
+        border: 1px solid var(--color-medio);
+        border-radius: 10px;
+        padding: 0.8rem 1rem;
+    }
+    .aviso p {
+        color: var(--color-texto);
+        margin: 0.25rem 0 0.5rem;
+    }
+    .aviso ul {
+        margin: 0;
+        padding-left: 1.2rem;
+    }
+    .aviso ul[data-enlaces] {
+        margin-top: 0.5rem;
+    }
+    .aviso a {
+        color: var(--color-primario);
+        font-weight: 600;
+    }
+
+    button {
+        margin-top: auto;
+        padding: 0.7rem 1rem;
+        border: 0;
+        border-radius: 10px;
+        background: var(--color-primario);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    button:disabled {
+        background: var(--color-borde);
+        color: var(--color-suave);
+        cursor: not-allowed;
+    }
+    [hidden] {
+        display: none !important;
+    }
+</style>
