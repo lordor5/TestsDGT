@@ -9,19 +9,19 @@ const [tests, preguntas] = await Promise.all([
 const ids = preguntas.map((p) => p.id);
 const apartados = [
     {
-        href: "/tests",
+        href: `${import.meta.env.BASE_URL}tests`,
         titulo: "Tests numerados",
         descripcion: `${tests.length} tests de 30 preguntas.`,
         icono: "📝",
     },
     {
-        href: "/fallos",
+        href: `${import.meta.env.BASE_URL}fallos`,
         titulo: "Tests que he fallado alguna vez",
         descripcion: "Preguntas que has fallado al menos una vez (nivel medio y difícil).",
         icono: "🔄",
     },
     {
-        href: "/siempre-fallo",
+        href: `${import.meta.env.BASE_URL}siempre-fallo`,
         titulo: "Tests que siempre fallo",
         descripcion: "Solo preguntas que sigues fallando (nivel difícil).",
         icono: "❌",

@@ -15,7 +15,7 @@ const minimo = PREGUNTAS_POR_TEST * TESTS_POR_BLOQUE;
 
 <Layout titulo="Tests numerados · Tests DGT">
     <nav class="migas">
-        <a href="/">← Inicio</a>
+        <a href={import.meta.env.BASE_URL}>← Inicio</a>
     </nav>
     <h1>Tests numerados</h1>
 
@@ -34,7 +34,7 @@ const minimo = PREGUNTAS_POR_TEST * TESTS_POR_BLOQUE;
                     <li>
                         <a
                             class="test"
-                            href={`/tests/${t.numero}`}
+                            href={`${import.meta.env.BASE_URL}tests/${t.numero}`}
                             data-test={t.numero}
                         >
                             <strong>Test {t.numero}</strong>

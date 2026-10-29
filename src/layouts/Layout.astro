@@ -14,7 +14,7 @@ const { titulo = 'Tests DGT' } = Astro.props;
   </head>
   <body>
     <header class="cabecera">
-      <a href="/" class="logo">Tests DGT</a>
+      <a href={import.meta.env.BASE_URL} class="logo">Tests DGT</a>
     </header>
     <main>
       <slot />

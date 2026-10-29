@@ -24,19 +24,19 @@ const titulo = `Test nº ${numero}`;
 
 <Layout titulo={`${titulo} · Tests DGT`}>
     <nav class="migas">
-        <a href="/tests">← Todos los tests</a>
+        <a href={`${import.meta.env.BASE_URL}tests`}>← Todos los tests</a>
     </nav>
 
     <TestRunner titulo={titulo} preguntas={preguntas} />
 
     <nav class="vecinos" aria-label="Otros tests">
         {anterior ? (
-            <a href={`/tests/${anterior}`}>← Test {anterior}</a>
+            <a href={`${import.meta.env.BASE_URL}tests/${anterior}`}>← Test {anterior}</a>
         ) : (
             <span />
         )}
         {siguiente ? (
-            <a href={`/tests/${siguiente}`}>Test {siguiente} →</a>
+            <a href={`${import.meta.env.BASE_URL}tests/${siguiente}`}>Test {siguiente} →</a>
         ) : (
             <span />
         )}
